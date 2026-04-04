@@ -33,6 +33,75 @@ OWS is a different approach — a local signing standard that keeps private keys
 
 ---
 
+## Running the Wallet App
+
+The `app/` directory is a full-stack wallet application — an Express server backed by the OWS Rust core, with a live web UI for managing wallets, signing, sending transactions, and testing access control.
+
+### Prerequisites
+
+- **Node.js** 20 or later
+- **Rust** (for building the native bindings) — install via [rustup.rs](https://rustup.rs)
+
+### 1. Build the Node.js bindings
+
+The app talks to the Rust signing core via a native Node.js addon. Build it once:
+
+```bash
+cd bindings/node
+npm install
+npm run build
+cd ../..
+```
+
+This compiles the Rust workspace and produces `ows-node.linux-x64-gnu.node` (or the equivalent for your platform). Takes 2–3 minutes on first run.
+
+### 2. Install app dependencies
+
+```bash
+cd app
+npm install
+```
+
+### 3. Start the server
+
+```bash
+node server.js
+```
+
+The app runs at **http://localhost:4000**. Your wallet vault is stored at `~/.ows-wallet`.
+
+```
+OWS Wallet running at http://localhost:4000
+Vault: /home/<you>/.ows-wallet
+```
+
+### What the app includes
+
+| Page | What you can do |
+|---|---|
+| **Portfolio** | Live balances across all chains, mainnet and testnet |
+| **Wallets** | Create, import (mnemonic or private key), rename, delete |
+| **Send** | Send SOL (Solana devnet/mainnet) and ETH (Sepolia/mainnet) |
+| **Receive** | QR code + address for any wallet and chain |
+| **Sign** | Sign messages, raw transactions, and EIP-712 typed data |
+| **Verify** | Verify any Solana or EVM signature against an address |
+| **Testnet** | Live testnet balances with faucet links |
+| **Policies** | Create chain-allowlist policies for agent access control |
+| **API Keys** | Issue and revoke scoped API tokens for agents |
+
+### Mainnet vs Testnet
+
+Toggle between modes in the top bar. In testnet mode the app queries Solana devnet, Sepolia, Base Sepolia, Amoy, and XRPL testnet — same wallet addresses, no real funds at risk.
+
+### Verify a signature from the command line
+
+```bash
+node app/verify-sig.mjs solana <address> "<message>" "<signatureHex>"
+node app/verify-sig.mjs evm    <address> "<message>" "<signatureHex>"
+```
+
+---
+
 ## Install
 
 ```bash
