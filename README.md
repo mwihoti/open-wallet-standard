@@ -294,39 +294,13 @@ All chains are first-class — not plugins, not afterthoughts. CAIP-2 and CAIP-1
 
 ---
 
-## Specification
-
-The full specification lives in [`docs/`](docs/) and at [openwallet.sh](https://openwallet.sh).
-
-| Document | Contents |
-|---|---|
-| [00 — Specification](docs/00-specification.md) | Scope, document classes, conformance, and extension points |
-| [01 — Storage Format](docs/01-storage-format.md) | Vault layout, keystore schema, filesystem permissions |
-| [02 — Signing Interface](docs/02-signing-interface.md) | sign, signAndSend, and signMessage operations |
-| [03 — Policy Engine](docs/03-policy-engine.md) | Pre-signing policies, rule types, and executable hooks |
-| [04 — Agent Access Layer](docs/04-agent-access-layer.md) | API key issuance, token format, and access profiles |
-| [05 — Key Isolation](docs/05-key-isolation.md) | Deployment guidance for process-level key isolation |
-| [06 — Wallet Lifecycle](docs/06-wallet-lifecycle.md) | Creation, import, recovery, deletion, and rotation |
-| [07 — Supported Chains](docs/07-supported-chains.md) | Chain families, canonical identifiers, and derivation rules |
-| [08 — Conformance and Security](docs/08-conformance-and-security.md) | Interoperability testing and security requirements |
-
-Reference implementation guides:
-
-- [Quickstart](docs/quickstart.md)
-- [CLI Reference](docs/sdk-cli.md)
-- [Node.js SDK](docs/sdk-node.md)
-- [Python SDK](docs/sdk-python.md)
-- [Policy Engine Implementation](docs/policy-engine-implementation.md)
-
----
-
 ## Production Roadmap
 
 OWS is functional today as a local signing standard. The path to production hardening is straightforward — the specification is already written for most of it, and the items below are sequenced by the dependency order that makes sense for real deployments.
 
 ### Near-term
 
-**Hardware security module (HSM) and TEE support.** The key isolation spec ([05](docs/05-key-isolation.md)) defines the interface. The next step is a production signing enclave — initially targeting AWS Nitro Enclaves and TPM-backed key storage — so that the vault can be deployed on a remote server without the host process ever seeing decrypted key material.
+**Hardware security module (HSM) and TEE support.** The key isolation defines the interface. The next step is a production signing enclave — initially targeting AWS Nitro 
 
 **MPC and threshold signing.** Many agent deployments need multiple signers to authorize a transaction (e.g. 2-of-3 co-signers before a large transfer). A threshold signing layer — initially secp256k1 via FROST, Ed25519 via FROST-Ed25519 — fits naturally above the current signing core without changing the API surface agents see.
 
@@ -344,19 +318,12 @@ OWS is functional today as a local signing standard. The path to production hard
 
 **Browser extension.** An OWS-compatible browser wallet that shares the vault format with the CLI and SDK, so the same wallet works in a browser context without a separate key management story.
 
-### Longer-term
-
-**x402 payment flow.** The CLI already has `ows pay request` for [x402](https://www.x402.org/) HTTP payment flows. The roadmap item is first-class SDK support and a middleware library so any Node.js or Python HTTP client can handle 402 responses automatically.
-
-**Language bindings beyond Node and Python.** Go, Ruby, and Java are the highest-demand targets based on where agents are being built. The Rust core is stable; adding a binding is a matter of writing the FFI layer.
-
-**Decentralized policy registry.** On-chain policy anchoring — publish a policy hash to a smart contract so multiple parties can independently verify that an agent was operating under a known, auditable policy at the time of signing.
 
 ---
 
 ## Contributing
 
-The specification is the source of truth. If you're building a compatible implementation, start with [docs/00-specification.md](docs/00-specification.md) and the conformance tests in [docs/08-conformance-and-security.md](docs/08-conformance-and-security.md).
+T
 
 Bug reports and pull requests are welcome. For significant changes, open an issue first to discuss the approach.
 
