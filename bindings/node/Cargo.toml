@@ -1,0 +1,22 @@
+[package]
+name = "ows-node"
+version = "1.2.0"
+edition = "2021"
+description = "Node.js native bindings for the Open Wallet Standard"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+fast-kdf = ["ows-lib/fast-kdf"]
+
+[dependencies]
+ows-lib = { path = "../../ows/crates/ows-lib" }
+ows-core = { path = "../../ows/crates/ows-core" }
+serde_json = "1"
+napi = { version = "2", features = ["napi6", "serde-json"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

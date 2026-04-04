@@ -1,0 +1,1825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OWS Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0c0e14;
+      --surface: #13151f;
+      --surface2: #1a1d2b;
+      --border: #252836;
+      --accent: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #4b5563;
+      --r: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; font-size: 14px; }
+
+    /* ── Layout ── */
+    .app { display: grid; grid-template-rows: 52px auto 1fr; height: 100vh; }
+    .top-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+    }
+    .logo { font-weight: 700; font-size: 15px; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+    .logo-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .vault-path { font-size: 11px; color: var(--muted); font-family: monospace; }
+
+    /* ── Network toggle ── */
+    .net-toggle { margin-left: auto; display: flex; align-items: center; gap: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+    .net-btn { padding: 4px 14px; border-radius: 999px; border: none; font-size: 11px; font-weight: 600; cursor: pointer; background: none; color: var(--muted); font-family: inherit; transition: all .15s; }
+    .net-btn.active { background: var(--surface2); color: var(--text); }
+    .net-btn.testnet.active { background: rgba(245,158,11,.2); color: var(--yellow); }
+
+    /* ── Warning banner ── */
+    .testnet-banner { background: rgba(245,158,11,.1); border-bottom: 1px solid rgba(245,158,11,.2); padding: 6px 20px; font-size: 11px; color: var(--yellow); display: none; }
+    .testnet-banner.show { display: flex; align-items: center; gap: 8px; }
+
+    .body { display: grid; grid-template-columns: 200px 1fr; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
+    .sidebar-section { padding: 12px 8px 4px; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 12px; margin: 1px 4px;
+      border-radius: 7px; cursor: pointer; font-size: 13px;
+      color: var(--muted); transition: all .12s;
+      border: none; background: none; width: calc(100% - 8px); text-align: left;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: rgba(99,102,241,.15); color: var(--accent); }
+    .nav-item .icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+    .nav-item .label { flex: 1; }
+    .nav-item .count { font-size: 10px; background: var(--surface2); padding: 1px 6px; border-radius: 999px; }
+    .nav-divider { border: none; border-top: 1px solid var(--border); margin: 8px 12px; }
+
+    /* ── Main content ── */
+    .content { overflow-y: auto; }
+    .page { display: none; padding: 24px; }
+    .page.active { display: block; }
+
+    /* ── Cards & typography ── */
+    .page-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+    .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 18px; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .card-title { font-size: 13px; font-weight: 600; }
+
+    /* ── Forms ── */
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .field input, .field select, .field textarea {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); padding: 7px 10px;
+      font-size: 13px; outline: none; transition: border-color .12s;
+      font-family: inherit;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+    .field textarea { resize: vertical; min-height: 60px; font-family: monospace; font-size: 12px; }
+    .fields-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .fields-row .field { flex: 1; min-width: 120px; }
+
+    /* ── Buttons ── */
+    .btn { padding: 7px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity .12s, transform .08s; white-space: nowrap; font-family: inherit; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { opacity: .85; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:hover:not(:disabled) { background: var(--surface2); }
+    .btn-danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
+    .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,.08); }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+    /* ── Wallet cards ── */
+    .wallet-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); margin-bottom: 12px; overflow: hidden;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .wallet-card:hover { border-color: var(--accent); }
+    .wallet-card-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+    .wallet-avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .wallet-info { flex: 1; min-width: 0; }
+    .wallet-name { font-weight: 600; font-size: 14px; }
+    .wallet-id { font-size: 10px; color: var(--muted); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wallet-actions { display: flex; gap: 6px; }
+
+    /* ── Balance grid ── */
+    .balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 0 16px 14px; }
+    .balance-chip {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px;
+      display: flex; flex-direction: column; gap: 4px;
+      cursor: pointer; transition: border-color .12s; text-decoration: none; color: inherit;
+    }
+    .balance-chip:hover { border-color: rgba(255,255,255,.2); }
+    .balance-chip-top { display: flex; align-items: center; gap: 6px; }
+    .chain-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .chain-name { font-size: 11px; font-weight: 600; color: var(--muted); }
+    .balance-val { font-size: 15px; font-weight: 700; font-family: monospace; }
+    .balance-sym { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .balance-loading { font-size: 12px; color: var(--muted); font-style: italic; }
+
+    /* ── Account detail ── */
+    .account-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .account-row:last-child { border-bottom: none; }
+    .chain-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--surface2); min-width: 72px; justify-content: center; }
+    .account-addr { font-family: monospace; font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-balance { font-family: monospace; font-size: 12px; font-weight: 600; white-space: nowrap; }
+
+    /* ── Tx history ── */
+    .tx-row { padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .tx-row:last-child { border-bottom: none; }
+    .tx-hash { font-family: monospace; font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tx-value { font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .tx-time { font-size: 10px; color: var(--muted); white-space: nowrap; }
+    .badge-success { background: rgba(34,197,94,.12); color: var(--green); padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+    .badge-fail { background: rgba(239,68,68,.12); color: var(--red); padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+    .badge-pending { background: rgba(245,158,11,.12); color: var(--yellow); padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+
+    /* ── Detail panel (right slide) ── */
+    .detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; }
+    .detail-overlay.open { display: block; }
+    .detail-panel {
+      position: fixed; right: 0; top: 0; bottom: 0; width: 520px;
+      background: var(--surface); border-left: 1px solid var(--border);
+      z-index: 101; overflow-y: auto; transform: translateX(100%);
+      transition: transform .2s ease;
+    }
+    .detail-panel.open { transform: translateX(0); }
+    .detail-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+    .detail-body { padding: 20px; }
+
+    /* ── QR ── */
+    .qr-box { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px; background: var(--bg); border-radius: var(--r); margin-bottom: 14px; }
+    #qr-canvas { background: white; padding: 10px; border-radius: 8px; }
+    .qr-addr { font-family: monospace; font-size: 11px; word-break: break-all; text-align: center; color: var(--muted); }
+
+    /* ── Sig result ── */
+    .sig-result { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 6px; padding: 12px; margin-top: 12px; font-family: monospace; font-size: 11px; word-break: break-all; display: none; }
+    .sig-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; font-family: system-ui; }
+
+    /* ── Toasts ── */
+    .toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 6px; z-index: 999; }
+    .toast { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 12px; max-width: 300px; animation: toastIn .18s ease; display: flex; align-items: center; gap: 8px; }
+    .toast.ok { border-left: 3px solid var(--green); }
+    .toast.err { border-left: 3px solid var(--red); }
+    @keyframes toastIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+    /* ── Misc ── */
+    .empty { color: var(--muted); text-align: center; padding: 40px 20px; font-size: 13px; }
+    .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spinning .5s linear infinite; vertical-align: middle; margin-right: 5px; }
+    @keyframes spinning { to{transform:rotate(360deg)} }
+    .mono { font-family: monospace; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .copy-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 2px 4px; border-radius: 3px; transition: color .1s; }
+    .copy-btn:hover { color: var(--text); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 8px 14px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--muted); border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .12s; font-family: inherit; }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Faucet card ── */
+    .faucet-card { background: rgba(245,158,11,.06); border: 1px solid rgba(245,158,11,.2); border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px; }
+    .faucet-title { font-size: 12px; font-weight: 600; color: var(--yellow); margin-bottom: 8px; }
+    .faucet-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(245,158,11,.1); }
+    .faucet-row:last-child { border-bottom: none; }
+
+    /* ── Testnet account card ── */
+    .testnet-chain { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; margin-bottom: 10px; }
+    .testnet-chain-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .testnet-addr-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: monospace; font-size: 11px; word-break: break-all; color: var(--muted); margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="top-bar">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      OWS Wallet
+    </div>
+    <span class="vault-path">vault: ~/.ows-wallet</span>
+    <div class="net-toggle">
+      <button class="net-btn active" id="btn-mainnet" onclick="setNetwork('mainnet')">Mainnet</button>
+      <button class="net-btn testnet" id="btn-testnet" onclick="setNetwork('testnet')">Testnet</button>
+    </div>
+  </div>
+  <div class="testnet-banner" id="testnet-banner">
+    ⚠ Testnet mode — addresses are real but funds have no value. Use faucets to get test tokens.
+  </div>
+
+  <div class="body">
+    <nav class="sidebar">
+      <div class="sidebar-section">Wallet</div>
+      <button class="nav-item active" onclick="nav('portfolio',this)"><span class="icon">◈</span><span class="label">Portfolio</span></button>
+      <button class="nav-item" onclick="nav('wallets',this)"><span class="icon">◻</span><span class="label">Wallets</span><span class="count" id="wallet-count">0</span></button>
+      <button class="nav-item" onclick="nav('send',this)"><span class="icon">↑</span><span class="label">Send</span></button>
+      <button class="nav-item" onclick="nav('receive',this)"><span class="icon">↓</span><span class="label">Receive</span></button>
+
+      <hr class="nav-divider" />
+      <div class="sidebar-section">Tools</div>
+      <button class="nav-item" onclick="nav('sign',this)"><span class="icon">✎</span><span class="label">Sign</span></button>
+      <button class="nav-item" onclick="nav('mnemonic',this)"><span class="icon">⬡</span><span class="label">Mnemonic</span></button>
+
+      <button class="nav-item" id="nav-testnet" onclick="nav('testnet',this)" style="display:none"><span class="icon">🧪</span><span class="label">Testnet</span></button>
+
+      <hr class="nav-divider" />
+      <div class="sidebar-section">Access Control</div>
+      <button class="nav-item" onclick="nav('policies',this)"><span class="icon">⊕</span><span class="label">Policies</span></button>
+      <button class="nav-item" onclick="nav('apikeys',this)"><span class="icon">◇</span><span class="label">API Keys</span></button>
+    </nav>
+
+    <main class="content">
+
+      <!-- ── PORTFOLIO ──────────────────────────────────────────────── -->
+      <div id="page-portfolio" class="page active">
+        <div class="page-title">Portfolio</div>
+        <div id="portfolio-content"><div class="empty">Loading wallets…</div></div>
+      </div>
+
+      <!-- ── WALLETS ────────────────────────────────────────────────── -->
+      <div id="page-wallets" class="page">
+        <div class="page-title">Wallets</div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">New Wallet</div>
+          <div class="fields-row">
+            <div class="field"><label>Name</label><input id="w-name" placeholder="my-wallet" /></div>
+            <div class="field" style="max-width:130px"><label>Words</label>
+              <select id="w-words"><option value="12">12 words</option><option value="24">24 words</option></select>
+            </div>
+            <div class="field"><label>BIP-39 Passphrase (optional)</label><input id="w-pass" type="password" placeholder="extra entropy" /></div>
+            <button class="btn btn-primary" onclick="createWallet()" style="flex-shrink:0;margin-top:16px">Create</button>
+          </div>
+          <hr />
+          <div class="card-title" style="margin-bottom:12px">Import from Mnemonic</div>
+          <div class="fields-row">
+            <div class="field"><label>Name</label><input id="wi-name" placeholder="imported" /></div>
+            <div class="field" style="flex:3"><label>Mnemonic phrase</label><input id="wi-mn" placeholder="word1 word2 word3 …" /></div>
+
+            <button class="btn btn-ghost" onclick="importWallet()" style="flex-shrink:0;margin-top:16px">Import</button>
+          </div>
+          <hr />
+          <div class="card-title" style="margin-bottom:12px">Import from Private Key</div>
+          <div class="fields-row">
+            <div class="field"><label>Name</label><input id="wpk-name" placeholder="pk-wallet" /></div>
+            <div class="field" style="flex:3"><label>Private key (hex, 64 chars)</label><input id="wpk-key" placeholder="4c0883a69102937d…" /></div>
+            <div class="field" style="max-width:130px"><label>Curve / chain type</label>
+              <select id="wpk-curve">
+                <option value="evm">EVM (secp256k1)</option>
+                <option value="solana">Solana (ed25519)</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost" onclick="importWalletPrivKey()" style="flex-shrink:0;margin-top:16px">Import</button>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="section-title" style="margin:0">Your wallets</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadWallets()">↻ Refresh</button>
+        </div>
+        <div id="wallet-list"><div class="empty">No wallets yet.</div></div>
+      </div>
+
+      <!-- ── SEND ───────────────────────────────────────────────────── -->
+      <div id="page-send" class="page">
+        <div class="page-title">Send</div>
+
+        <div class="card">
+          <div class="fields-row">
+            <div class="field">
+              <label>From wallet</label>
+              <select id="send-from" onchange="onSendWalletChange()">
+                <option value="">— select wallet —</option>
+              </select>
+            </div>
+            <div class="field" style="max-width:160px">
+              <label>Asset</label>
+              <select id="send-asset" onchange="onSendAssetChange()">
+                <option value="">— select —</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="send-balance-row" style="display:none;margin:10px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Available balance</div>
+            <div style="font-size:20px;font-weight:700;font-family:monospace" id="send-available">—</div>
+          </div>
+
+          <div class="fields-row" style="margin-top:12px">
+            <div class="field" style="flex:3">
+              <label>To address <span id="send-addr-format" style="color:var(--muted);font-weight:400"></span></label>
+              <input id="send-to" placeholder="Recipient address" oninput="validateSendAddress()" />
+            </div>
+            <div class="field" style="max-width:180px">
+              <label>Amount</label>
+              <input id="send-amount" type="number" step="any" min="0" placeholder="0.00" />
+            </div>
+          </div>
+
+          <div id="send-addr-hint" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:11px;color:var(--yellow)"></div>
+          <div id="send-addr-err" style="display:none;margin-top:6px;padding:7px 10px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;font-size:11px;color:var(--red)"></div>
+
+          <div id="send-to-wallets" style="margin-top:10px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Or pick a destination wallet — address auto-fills:</div>
+            <div id="send-to-wallet-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          </div>
+
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+            <button class="btn btn-primary" id="send-btn" onclick="doSend()" disabled>Send</button>
+            <span id="send-status" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+        </div>
+
+        <div id="send-result" style="display:none;margin-top:0" class="card">
+          <div style="color:var(--green);font-weight:600;margin-bottom:10px">✓ Transaction broadcast</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Transaction hash</div>
+          <div style="font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:12px" id="send-txhash"></div>
+          <div style="display:flex;gap:8px">
+            <a id="send-explorer-link" href="#" target="_blank" class="btn btn-primary btn-sm">View on Explorer ↗</a>
+            <button class="btn btn-ghost btn-sm" onclick="copySendTx()">Copy tx hash</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── RECEIVE ────────────────────────────────────────────────── -->
+      <div id="page-receive" class="page">
+        <div class="page-title">Receive</div>
+        <div class="card">
+          <div class="fields-row">
+            <div class="field" style="flex:1">
+              <label>Wallet</label>
+              <select id="recv-wallet" onchange="onRecvWalletChange()"><option value="">— select wallet —</option></select>
+            </div>
+            <div class="field" style="flex:1">
+              <label>Chain</label>
+              <select id="recv-chain" onchange="updateReceive()"><option value="">— select wallet first —</option></select>
+            </div>
+          </div>
+        </div>
+        <div id="recv-content" class="card" style="display:none">
+          <div class="qr-box">
+            <div id="qr-canvas"></div>
+            <div class="qr-addr" id="recv-addr"></div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button class="btn btn-ghost btn-sm" onclick="copyAddr()">Copy Address</button>
+            <a id="recv-explorer" href="#" target="_blank" class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:4px">View on Explorer ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SIGN ───────────────────────────────────────────────────── -->
+      <div id="page-sign" class="page">
+        <div class="page-title">Sign</div>
+
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('sign','message',this)">Message</button>
+          <button class="tab" onclick="switchTab('sign','tx',this)">Transaction</button>
+          <button class="tab" onclick="switchTab('sign','typed',this)">EIP-712</button>
+          <button class="tab" onclick="switchTab('sign','verify',this)">Verify</button>
+        </div>
+
+        <div id="sign-tab-message" class="tab-content active">
+          <div class="card">
+            <div class="fields-row">
+              <div class="field"><label>Wallet (name or ID)</label><input id="sm-wallet" placeholder="my-wallet" /></div>
+              <div class="field" style="max-width:130px"><label>Chain</label>
+                <select id="sm-chain">
+                  <option value="evm">EVM / Ethereum</option><option value="base">Base</option>
+                  <option value="solana">Solana</option><option value="sui">Sui</option>
+                  <option value="bitcoin">Bitcoin</option><option value="cosmos">Cosmos</option>
+                  <option value="tron">Tron</option><option value="ton">TON</option>
+                  <option value="filecoin">Filecoin</option><option value="xrpl">XRPL</option>
+                </select>
+              </div>
+              <div class="field" style="flex:3"><label>Message</label><input id="sm-message" placeholder="Hello, world!" /></div>
+            </div>
+            <div class="fields-row" style="margin-top:10px">
+              <div class="field"><label>API Key token (blank = owner mode)</label><input id="sm-apikey" placeholder="ows_key_…" /></div>
+              <button class="btn btn-primary" onclick="signMsg()" style="flex-shrink:0;margin-top:16px">Sign</button>
+            </div>
+            <div class="sig-result" id="sm-result"></div>
+          </div>
+        </div>
+
+        <div id="sign-tab-tx" class="tab-content">
+          <div class="card">
+            <div class="fields-row">
+              <div class="field"><label>Wallet (name or ID)</label><input id="st-wallet" placeholder="my-wallet" /></div>
+              <div class="field" style="max-width:130px"><label>Chain</label>
+                <select id="st-chain">
+                  <option value="evm">EVM / Ethereum</option><option value="base">Base</option>
+                  <option value="solana">Solana</option><option value="sui">Sui</option>
+                  <option value="bitcoin">Bitcoin</option><option value="cosmos">Cosmos</option>
+                  <option value="tron">Tron</option><option value="ton">TON</option>
+                  <option value="filecoin">Filecoin</option><option value="xrpl">XRPL</option>
+                </select>
+              </div>
+            </div>
+            <div class="field" style="margin-top:10px"><label>Raw transaction hex</label><textarea id="st-txhex" placeholder="02f8…"></textarea></div>
+            <div class="fields-row" style="margin-top:10px">
+              <div class="field"><label>API Key token (blank = owner mode)</label><input id="st-apikey" placeholder="ows_key_…" /></div>
+              <button class="btn btn-primary" onclick="signTx()" style="flex-shrink:0;margin-top:16px">Sign</button>
+            </div>
+            <div class="sig-result" id="st-result"></div>
+          </div>
+        </div>
+
+        <div id="sign-tab-typed" class="tab-content">
+          <div class="card">
+            <div class="fields-row">
+              <div class="field"><label>Wallet (name or ID)</label><input id="td-wallet" placeholder="my-wallet" /></div>
+              <div class="field" style="max-width:130px"><label>Chain</label>
+                <select id="td-chain"><option value="evm">EVM / Ethereum</option><option value="base">Base</option></select>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="loadTypedExample()" style="flex-shrink:0;margin-top:16px">Load example</button>
+            </div>
+            <div class="field" style="margin-top:10px"><label>EIP-712 typed data JSON</label><textarea id="td-data" rows="8"></textarea></div>
+            <div style="margin-top:10px">
+              <button class="btn btn-primary" onclick="signTyped()">Sign</button>
+            </div>
+            <div class="sig-result" id="td-result"></div>
+          </div>
+        </div>
+
+        <div id="sign-tab-verify" class="tab-content">
+          <div class="card">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+              Verify that a signature was produced by the owner of an address. Paste in the address, original message, and signature hex.
+            </div>
+            <div class="fields-row">
+              <div class="field" style="max-width:130px">
+                <label>Chain</label>
+                <select id="vfy-chain">
+                  <option value="solana">Solana (ed25519)</option>
+                  <option value="evm">EVM / Ethereum</option>
+                </select>
+              </div>
+              <div class="field" style="flex:2">
+                <label>Address (signer)</label>
+                <input id="vfy-address" placeholder="JAHzn5JD4bTm… or 0xAb16…" />
+              </div>
+            </div>
+            <div class="fields-row" style="margin-top:10px">
+              <div class="field" style="flex:2"><label>Original message</label><input id="vfy-message" placeholder="hell0" /></div>
+              <div class="field" style="flex:3"><label>Signature (hex)</label><input id="vfy-sig" placeholder="02eb506a…" /></div>
+            </div>
+            <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+              <button class="btn btn-primary" onclick="verifySig()">Verify</button>
+              <button class="btn btn-ghost btn-sm" onclick="pasteLastSig()">Paste last signed result</button>
+            </div>
+            <div id="vfy-result" style="display:none;margin-top:14px;padding:14px;border-radius:8px;font-size:13px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MNEMONIC ───────────────────────────────────────────────── -->
+      <div id="page-mnemonic" class="page">
+        <div class="page-title">Mnemonic Tools</div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Generate</div>
+          <div class="fields-row">
+            <div class="field" style="max-width:140px"><label>Word count</label>
+              <select id="mn-words"><option value="12">12 words</option><option value="24">24 words</option></select>
+            </div>
+            <button class="btn btn-primary" onclick="generateMnemonic()" style="flex-shrink:0;margin-top:16px">Generate</button>
+          </div>
+          <div id="mn-output" style="display:none;margin-top:14px">
+            <div class="sig-result" id="mn-result" style="display:block;border-left-color:var(--accent)"></div>
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="copyMn()">Copy</button>
+              <button class="btn btn-ghost btn-sm" onclick="pasteToDerive()">Use in Derive ↓</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Derive All Addresses</div>
+          <div class="fields-row">
+            <div class="field" style="flex:3"><label>Mnemonic phrase</label><input id="derive-mn" placeholder="word1 word2 …" /></div>
+            <button class="btn btn-primary" onclick="deriveAll()" style="flex-shrink:0;margin-top:16px">Derive All</button>
+          </div>
+          <div id="derive-grid" style="display:none;margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px"></div>
+        </div>
+      </div>
+
+      <!-- ── POLICIES ───────────────────────────────────────────────── -->
+      <div id="page-policies" class="page">
+        <div class="page-title">Policies</div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Create Policy</div>
+          <div class="fields-row">
+            <div class="field"><label>ID</label><input id="pol-id" placeholder="base-only" /></div>
+            <div class="field"><label>Name</label><input id="pol-name" placeholder="Base Only" /></div>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Allowed chains (CAIP-2, comma-separated)</label>
+            <input id="pol-chains" placeholder="eip155:8453, eip155:84532" />
+          </div>
+          <div style="margin-top:12px"><button class="btn btn-primary" onclick="createPolicy()">Create</button></div>
+        </div>
+        <div class="section-title">Active policies</div>
+        <div class="card" id="policy-list"><div class="empty">No policies.</div></div>
+      </div>
+
+      <!-- ── API KEYS ───────────────────────────────────────────────── -->
+      <div id="page-apikeys" class="page">
+        <div class="page-title">API Keys</div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">Create API Key</div>
+          <div class="fields-row">
+            <div class="field"><label>Name</label><input id="k-name" placeholder="agent-key" /></div>
+            <div class="field"><label>Wallet IDs (comma-separated)</label><input id="k-wallets" placeholder="uuid1, uuid2" /></div>
+            <div class="field"><label>Policy IDs (optional)</label><input id="k-policies" placeholder="base-only" /></div>
+          </div>
+          <div class="fields-row" style="margin-top:10px">
+            <div class="field" style="max-width:240px"><label>Expires at (ISO 8601, optional)</label><input id="k-expires" placeholder="2027-01-01T00:00:00Z" /></div>
+            <button class="btn btn-primary" onclick="createApiKey()" style="flex-shrink:0;margin-top:16px">Create</button>
+          </div>
+          <div id="key-created" style="display:none;margin-top:14px;padding:14px;background:rgba(34,197,94,.07);border:1px solid var(--green);border-radius:8px">
+            <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:6px">⚠ Save this token — shown only once</div>
+            <div class="mono" style="font-size:12px;word-break:break-all" id="key-token"></div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="copyToken()">Copy token</button>
+          </div>
+        </div>
+        <div class="section-title">Active keys</div>
+        <div class="card" id="key-list"><div class="empty">No API keys.</div></div>
+      </div>
+
+      <!-- ── TESTNET ──────────────────────────────────────────────────── -->
+      <div id="page-testnet" class="page">
+        <div class="page-title">Testnet</div>
+
+        <div class="card" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.25)">
+          <div style="font-size:13px;color:var(--yellow);font-weight:600;margin-bottom:6px">What is this?</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.6">
+            Your wallet's private key works on both mainnet and testnet — the blockchain address is identical.<br>
+            Select a wallet below to see its testnet addresses, get free test tokens from faucets, and track transactions on testnet explorers.
+          </div>
+        </div>
+
+        <div class="fields-row" style="margin-bottom:16px;align-items:flex-end">
+          <div class="field" style="max-width:240px">
+            <label>Wallet</label>
+            <select id="tn-wallet-sel" onchange="loadTestnetAccounts()">
+              <option value="">— select wallet —</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost" onclick="loadTestnetAccounts()" id="tn-refresh-btn" style="display:none">↻ Refresh</button>
+          <span id="tn-last-updated" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+
+        <div id="tn-content"><div class="empty">Select a wallet above.</div></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ── Detail panel (wallet accounts + tx history) ── -->
+<div class="detail-overlay" id="overlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:15px" id="dp-name"></div>
+      <div style="font-size:10px;color:var(--muted);font-family:monospace;margin-top:2px" id="dp-id"></div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="btn btn-ghost btn-sm" id="dp-rename-btn" onclick="renameWalletPrompt()" title="Rename">✎</button>
+      <button class="btn btn-danger btn-sm" id="dp-delete-btn" onclick="deleteWalletFromDetail()" title="Delete wallet">Delete</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeDetail()">✕</button>
+    </div>
+  </div>
+  <div class="detail-body">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('dp','accounts',this)">Accounts</button>
+      <button class="tab" onclick="switchTab('dp','history',this)">Transactions</button>
+    </div>
+
+    <div id="dp-tab-accounts" class="tab-content active">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:11px;color:var(--muted)" id="dp-bal-updated"></span>
+        <button class="btn btn-ghost btn-sm" onclick="refreshDetailBalances()">↻ Refresh</button>
+      </div>
+      <div id="dp-accounts"></div>
+    </div>
+
+    <div id="dp-tab-history" class="tab-content">
+      <div class="fields-row" style="margin-bottom:12px">
+        <div class="field" style="flex:1"><label>Chain</label>
+          <select id="dp-chain-select" onchange="loadTxHistory()"></select>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadTxHistory()" style="flex-shrink:0;margin-top:16px">↻ Refresh</button>
+      </div>
+      <div id="dp-tx-list"><div class="empty">Select a chain above.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let wallets = [];
+let networks = {};
+let isTestnet = false;
+let currentWallet = null;
+let lastMnemonic = '';
+let lastToken = '';
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+(async () => {
+  try {
+    networks = await api('GET', '/api/networks?testnet=false').then(r => r.ok ? r.data : {});
+    await loadWallets();
+    await renderPortfolio();
+  } catch (e) {
+    console.error('Bootstrap error:', e);
+    const el = document.getElementById('portfolio-content');
+    if (el) el.innerHTML = `<div class="empty" style="color:var(--red)">
+      Failed to load: ${e.message}<br>
+      <span style="font-size:11px;color:var(--muted)">Make sure the server is running: <code>node server.js</code></span>
+    </div>`;
+  }
+})();
+
+// ── Network toggle ────────────────────────────────────────────────────────────
+
+async function setNetwork(mode) {
+  isTestnet = (mode === 'testnet');
+  document.getElementById('btn-mainnet').classList.toggle('active', !isTestnet);
+  document.getElementById('btn-testnet').classList.toggle('active', isTestnet);
+  document.getElementById('testnet-banner').classList.toggle('show', isTestnet);
+  document.getElementById('nav-testnet').style.display = isTestnet ? '' : 'none';
+
+  networks = await api('GET', `/api/networks?testnet=${isTestnet}`).then(r => r.ok ? r.data : {});
+  populateReceiveChains();
+
+  // Always go to portfolio — it switches content based on isTestnet
+  stopTestnetPoll();
+  stopPortfolioPoll();
+  const portfolioBtn = document.querySelector('.nav-item');
+  nav('portfolio', portfolioBtn);
+  await renderPortfolio();
+  if (isTestnet) { populateTestnetWallets(); }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function nav(page, btn) {
+  if (page !== 'testnet') stopTestnetPoll();
+  if (page !== 'portfolio') stopPortfolioPoll();
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  btn.classList.add('active');
+  if (page === 'portfolio') renderPortfolio();
+  if (page === 'wallets') renderWalletList();
+  if (page === 'receive') populateReceiveWallets();
+  if (page === 'policies') loadPolicies();
+  if (page === 'apikeys') loadApiKeys();
+  if (page === 'testnet') { populateTestnetWallets(); loadTestnetAccounts(); }
+  if (page === 'send') { loadWallets().then(() => initSendPage()); }
+  if (page === 'receive') { loadWallets().then(() => initReceivePage()); }
+}
+
+function switchTab(group, tab, btn) {
+  const prefix = group + '-tab-';
+  document.querySelectorAll(`[id^="${prefix}"]`).forEach(el => el.classList.remove('active'));
+  document.getElementById(prefix + tab).classList.add('active');
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function copy(text, label = 'Copied') {
+  navigator.clipboard.writeText(text).then(() => toast(label + ' to clipboard'));
+}
+
+// ── Wallets ───────────────────────────────────────────────────────────────────
+
+async function loadWallets() {
+  const r = await api('GET', '/api/wallets');
+  wallets = r.ok ? r.data : [];
+  document.getElementById('wallet-count').textContent = wallets.length;
+  return wallets;
+}
+
+async function createWallet() {
+  const name = document.getElementById('w-name').value.trim();
+  if (!name) { toast('Enter a wallet name', 'err'); return; }
+  const r = await api('POST', '/api/wallets', {
+    name,
+    words: +document.getElementById('w-words').value,
+    passphrase: document.getElementById('w-pass').value || null,
+  });
+  if (r.ok) {
+    toast(`"${name}" created with 9 chain accounts`);
+    document.getElementById('w-name').value = '';
+    document.getElementById('w-pass').value = '';
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+async function importWallet() {
+  const name = document.getElementById('wi-name').value.trim();
+  const mnemonic = document.getElementById('wi-mn').value.trim();
+  if (!name || !mnemonic) { toast('Name and mnemonic required', 'err'); return; }
+  const r = await api('POST', '/api/wallets/import/mnemonic', { name, mnemonic });
+  if (r.ok) {
+    toast(`"${name}" imported`);
+    document.getElementById('wi-name').value = '';
+    document.getElementById('wi-mn').value = '';
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+async function importWalletPrivKey() {
+  const name = document.getElementById('wpk-name').value.trim();
+  const privateKey = document.getElementById('wpk-key').value.trim();
+  const curve = document.getElementById('wpk-curve').value;
+  if (!name || !privateKey) { toast('Name and private key required', 'err'); return; }
+  const r = await api('POST', '/api/wallets/import/privatekey', { name, privateKey, curve });
+  if (r.ok) {
+    toast(`"${name}" imported from private key`);
+    document.getElementById('wpk-name').value = '';
+    document.getElementById('wpk-key').value = '';
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+async function deleteWallet(id, name, e) {
+  e.stopPropagation();
+  if (!confirm(`Delete "${name}"? This removes the wallet from this vault only.`)) return;
+  const r = await api('DELETE', `/api/wallets/${id}`);
+  if (r.ok) {
+    toast(`"${name}" deleted`);
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+// ── Portfolio ─────────────────────────────────────────────────────────────────
+
+let portfolioPollTimer = null;
+
+function stopPortfolioPoll() {
+  if (portfolioPollTimer) { clearInterval(portfolioPollTimer); portfolioPollTimer = null; }
+}
+
+async function renderPortfolio() {
+  const el = document.getElementById('portfolio-content');
+  if (!wallets.length) {
+    el.innerHTML = '<div class="empty">No wallets yet. Create one in the Wallets tab.</div>';
+    return;
+  }
+
+  if (isTestnet) {
+    await renderPortfolioTestnet(el);
+  } else {
+    renderPortfolioMainnet(el);
+  }
+
+  stopPortfolioPoll();
+  portfolioPollTimer = setInterval(() => renderPortfolio(), isTestnet ? 20000 : 30000);
+}
+
+function renderPortfolioMainnet(el) {
+  el.innerHTML = wallets.map(w => walletCardHtml(w, w.accounts.map(a => {
+    const chain = networks[a.chainId] || {};
+    return { chainId: a.chainId, chainName: chain.name || a.chainId.split(':')[0], color: chain.color || '#888', slotId: `b-${w.id}-${safeId(a.chainId)}` };
+  }))).join('');
+  wallets.forEach(w => fetchMainnetBalances(w));
+}
+
+async function renderPortfolioTestnet(el) {
+  // Fetch all testnet accounts for all wallets first
+  const results = await Promise.all(wallets.map(w =>
+    api('GET', `/api/wallets/${w.id}/testnet-accounts`).then(r => ({ wallet: w, accounts: r.ok ? r.data : [] }))
+  ));
+
+  el.innerHTML = results.map(({ wallet: w, accounts }) => {
+    if (!accounts.length) return walletCardHtml(w, []);
+    const chips = accounts.map(a => ({ ...a, slotId: `b-${w.id}-${safeId(a.chainId)}`, prefetched: a.balance }));
+    return walletCardHtml(w, chips);
+  }).join('');
+
+  // Paint balances immediately from prefetched data
+  results.forEach(({ wallet: w, accounts }) => {
+    accounts.forEach(a => {
+      const el = document.getElementById(`b-${w.id}-${safeId(a.chainId)}`);
+      if (el) renderBalanceEl(el, a.balance, a.explorerUrl);
+    });
+  });
+}
+
+function walletCardHtml(w, chips) {
+  const chipsHtml = chips.length
+    ? chips.map(c => `
+        <div class="balance-chip" onclick="event.stopPropagation()" style="cursor:default">
+          <div class="balance-chip-top">
+            <div class="chain-dot" style="background:${c.color||'#888'}"></div>
+            <div class="chain-name">${c.chainName}</div>
+            ${c.prefetched && !c.prefetched.error && parseFloat(c.prefetched.formatted||'0')>0
+              ? `<span style="width:5px;height:5px;background:var(--green);border-radius:50%;margin-left:auto"></span>`
+              : ''}
+          </div>
+          <div class="balance-loading" id="${c.slotId}">loading…</div>
+        </div>`).join('')
+    : `<div style="font-size:11px;color:var(--muted);padding:8px 0">No ${isTestnet?'testnet':'mainnet'} chains</div>`;
+
+  const safeName = w.name.replace(/'/g, "\\'");
+  return `
+    <div class="wallet-card" onclick="openDetail('${w.id}')">
+      <div class="wallet-card-header">
+        <div class="wallet-avatar" style="background:${hashColor(w.id)}22">${w.name[0].toUpperCase()}</div>
+        <div class="wallet-info">
+          <div class="wallet-name">${w.name}</div>
+          <div class="wallet-id">${w.id}</div>
+        </div>
+        <div class="wallet-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick="copy('${w.id}','ID')">Copy ID</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}','${safeName}',event)">Delete</button>
+        </div>
+      </div>
+      <div class="balance-grid" id="bal-${w.id}">${chipsHtml}</div>
+    </div>`;
+}
+
+function renderBalanceEl(el, balance, explorerUrl) {
+  if (!balance) { el.textContent = '—'; return; }
+  if (balance.error) {
+    el.outerHTML = `<div class="balance-val" style="color:var(--muted);font-size:11px">unavailable</div>`;
+    return;
+  }
+  const funded = parseFloat(balance.formatted || '0') > 0;
+  el.outerHTML = `
+    <a class="balance-val" href="${explorerUrl||'#'}" target="_blank"
+       title="View on explorer" style="text-decoration:none;color:${funded?'var(--green)':'inherit'}">
+      ${balance.formatted}
+    </a>
+    <div class="balance-sym">${balance.symbol}</div>`;
+}
+
+async function fetchMainnetBalances(wallet) {
+  const r = await api('GET', `/api/wallets/${wallet.id}/balances`);
+  if (!r.ok) return;
+  r.data.forEach(item => {
+    const el = document.getElementById(`b-${wallet.id}-${safeId(item.chainId)}`);
+    if (el) renderBalanceEl(el, item.balance, item.explorerUrl);
+  });
+}
+
+function renderWalletList() {
+  const el = document.getElementById('wallet-list');
+  if (!wallets.length) { el.innerHTML = '<div class="empty">No wallets yet.</div>'; return; }
+  el.innerHTML = wallets.map(w => `
+    <div class="wallet-card" onclick="openDetail('${w.id}')">
+      <div class="wallet-card-header">
+        <div class="wallet-avatar" style="background:${hashColor(w.id)}22">${w.name[0].toUpperCase()}</div>
+        <div class="wallet-info">
+          <div class="wallet-name">${w.name}</div>
+          <div class="wallet-id">${w.id}</div>
+        </div>
+        <div class="wallet-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick="copy('${w.id}','ID')">Copy ID</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}','${w.name}',event)">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+
+async function openDetailAccounts(walletId) {
+  const accEl = document.getElementById('dp-accounts');
+  const updEl = document.getElementById('dp-bal-updated');
+  accEl.innerHTML = '<div class="empty"><span class="spin"></span>Loading balances…</div>';
+
+  if (isTestnet) {
+    const r = await api('GET', `/api/wallets/${walletId}/testnet-accounts`);
+    const accounts = r.ok ? r.data : [];
+
+    accEl.innerHTML = accounts.length
+      ? accounts.map(a => {
+          const bal = a.balance?.formatted ?? '—';
+          const sym = a.balance?.symbol ?? a.symbol ?? '';
+          const funded = a.balance && !a.balance.error && parseFloat(a.balance.formatted||'0') > 0;
+          const explorerUrl = a.explorerUrl ?? '#';
+          const faucetHtml = (a.faucets || []).length
+            ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${
+                a.faucets.map(f =>
+                  `<a href="${f.url}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--yellow);border-color:rgba(245,158,11,.3)">🚰 ${f.name}</a>`
+                ).join('')}</div>`
+            : '';
+          return `<div class="account-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:12px 0">
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <div class="chain-badge" style="background:${a.color||'#888'}22;border:1px solid ${a.color||'#888'}44">
+                <div class="chain-dot" style="background:${a.color||'#888'}"></div>
+                ${a.chainName || a.chainId.split(':')[0]}
+              </div>
+              <div class="account-balance" style="color:${funded?'var(--green)':'inherit'}">${bal} ${sym}</div>
+              <button class="copy-btn" onclick="copy('${a.address}','Address')" title="Copy address" style="margin-left:auto">⎘</button>
+              <a href="${explorerUrl}" target="_blank" title="View on explorer" style="color:var(--muted);font-size:13px">↗</a>
+            </div>
+            <div class="account-addr" title="${a.address}" style="width:100%">${a.address}</div>
+            ${faucetHtml}
+          </div>`;
+        }).join('')
+      : '<div class="empty">No testnet accounts found.</div>';
+
+    const sel = document.getElementById('dp-chain-select');
+    sel.innerHTML = accounts.map(a =>
+      `<option value="${a.chainId}">${a.chainName || a.chainId}</option>`
+    ).join('');
+  } else {
+    const balR = await api('GET', `/api/wallets/${walletId}/balances`);
+    const bals = balR.ok ? balR.data : [];
+    const balMap = Object.fromEntries(bals.map(b => [b.chainId, b]));
+
+    accEl.innerHTML = currentWallet.accounts.map(a => {
+      const b = balMap[a.chainId] || {};
+      const chain = networks[a.chainId] || {};
+      const bal = b.balance?.formatted ?? '—';
+      const sym = b.balance?.symbol ?? '';
+      const funded = b.balance && !b.balance.error && parseFloat(b.balance.formatted||'0') > 0;
+      const explorerUrl = b.explorerUrl ?? '#';
+      return `<div class="account-row">
+        <div class="chain-badge">
+          <div class="chain-dot" style="background:${chain.color||'#888'}"></div>
+          ${chain.name || a.chainId.split(':')[0]}
+        </div>
+        <div class="account-addr" title="${a.address}">${a.address}</div>
+        <div class="account-balance" style="color:${funded?'var(--green)':'inherit'}">${bal} ${sym}</div>
+        <button class="copy-btn" onclick="copy('${a.address}','Address')" title="Copy address">⎘</button>
+        <a href="${explorerUrl}" target="_blank" title="View on explorer" style="color:var(--muted);font-size:13px">↗</a>
+      </div>`;
+    }).join('');
+
+    const sel = document.getElementById('dp-chain-select');
+    sel.innerHTML = currentWallet.accounts.map(a => {
+      const chain = networks[a.chainId] || {};
+      return `<option value="${a.chainId}">${chain.name || a.chainId}</option>`;
+    }).join('');
+  }
+
+  updEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+}
+
+async function openDetail(walletId) {
+  currentWallet = wallets.find(w => w.id === walletId);
+  if (!currentWallet) return;
+
+  document.getElementById('dp-name').textContent = currentWallet.name;
+  document.getElementById('dp-id').textContent = currentWallet.id;
+  document.getElementById('dp-tx-list').innerHTML = '<div class="empty">Click Refresh to load transactions.</div>';
+
+  await openDetailAccounts(walletId);
+
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('detail-panel').classList.add('open');
+
+  // Auto-refresh balances every 30s while panel is open
+  if (detailPollTimer) clearInterval(detailPollTimer);
+  detailPollTimer = setInterval(() => {
+    if (currentWallet) openDetailAccounts(currentWallet.id);
+  }, 30000);
+}
+
+let detailPollTimer = null;
+
+function closeDetail() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('detail-panel').classList.remove('open');
+  if (detailPollTimer) { clearInterval(detailPollTimer); detailPollTimer = null; }
+}
+
+async function refreshDetailBalances() {
+  if (!currentWallet) return;
+  await openDetailAccounts(currentWallet.id);
+}
+
+async function renameWalletPrompt() {
+  if (!currentWallet) return;
+  const newName = prompt(`Rename "${currentWallet.name}" to:`, currentWallet.name);
+  if (!newName || newName === currentWallet.name) return;
+  const r = await api('PATCH', `/api/wallets/${currentWallet.id}/rename`, { newName });
+  if (r.ok) {
+    toast(`Renamed to "${newName}"`);
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+    document.getElementById('dp-name').textContent = newName;
+    currentWallet = wallets.find(w => w.id === currentWallet.id);
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+async function deleteWalletFromDetail() {
+  if (!currentWallet) return;
+  if (!confirm(`Delete "${currentWallet.name}"? This removes the wallet from this vault only.`)) return;
+  const r = await api('DELETE', `/api/wallets/${currentWallet.id}`);
+  if (r.ok) {
+    toast(`"${currentWallet.name}" deleted`);
+    closeDetail();
+    await loadWallets();
+    renderWalletList();
+    renderPortfolio();
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+async function loadTxHistory() {
+  if (!currentWallet) return;
+  const chainId = document.getElementById('dp-chain-select').value;
+  const el = document.getElementById('dp-tx-list');
+  el.innerHTML = '<div class="empty"><span class="spin"></span>Loading…</div>';
+
+  const r = await api('GET', `/api/wallets/${currentWallet.id}/txs/${encodeURIComponent(chainId)}`);
+  if (!r.ok) { el.innerHTML = `<div class="empty" style="color:var(--red)">${r.error}</div>`; return; }
+  const txs = r.data;
+
+  if (!txs.length) { el.innerHTML = '<div class="empty">No transactions found on this chain.</div>'; return; }
+  if (txs[0]?.error) { el.innerHTML = `<div class="empty" style="color:var(--red)">${txs[0].error}</div>`; return; }
+
+  el.innerHTML = txs.map(tx => {
+    const statusBadge = tx.status === 'success'
+      ? `<span class="badge-success">confirmed</span>`
+      : tx.status === 'failed'
+        ? `<span class="badge-fail">failed</span>`
+        : `<span class="badge-pending">pending</span>`;
+    const time = tx.timestamp ? timeAgo(tx.timestamp) : '';
+    const hashShort = tx.hash ? tx.hash.slice(0, 12) + '…' + tx.hash.slice(-8) : '—';
+    return `<div class="tx-row">
+      ${statusBadge}
+      <div class="tx-hash" title="${tx.hash || ''}">
+        ${tx.explorerUrl
+          ? `<a href="${tx.explorerUrl}" target="_blank">${hashShort}</a>`
+          : hashShort}
+      </div>
+      ${tx.value ? `<div class="tx-value">${tx.value}</div>` : ''}
+      <div class="tx-time">${time}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Receive ───────────────────────────────────────────────────────────────────
+
+let qrInstance = null;
+
+function populateReceiveWallets() {
+  const sel = document.getElementById('recv-wallet');
+  sel.innerHTML = '<option value="">— select wallet —</option>' +
+    wallets.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+  document.getElementById('recv-content').style.display = 'none';
+}
+
+// Chain display name from either mainnet or testnet chain registries
+const CHAIN_LABELS = {
+  'eip155:1': 'Ethereum', 'eip155:8453': 'Base', 'eip155:137': 'Polygon',
+  'eip155:42161': 'Arbitrum', 'eip155:10': 'Optimism', 'eip155:56': 'BNB Chain',
+  'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': 'Solana',
+  'bip122:000000000019d6689c085ae165831e93': 'Bitcoin',
+  'cosmos:cosmoshub-4': 'Cosmos', 'tron:mainnet': 'Tron', 'ton:mainnet': 'TON',
+  'fil:mainnet': 'Filecoin', 'sui:mainnet': 'Sui', 'xrpl:mainnet': 'XRPL',
+};
+
+const EXPLORER_URLS = {
+  'eip155:1':   { base:'https://etherscan.io',            path:'/address/{a}' },
+  'eip155:8453':{ base:'https://basescan.org',             path:'/address/{a}' },
+  'eip155:137': { base:'https://polygonscan.com',          path:'/address/{a}' },
+  'eip155:42161':{ base:'https://arbiscan.io',             path:'/address/{a}' },
+  'eip155:10':  { base:'https://optimistic.etherscan.io',  path:'/address/{a}' },
+  'eip155:56':  { base:'https://bscscan.com',              path:'/address/{a}' },
+  'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': { base:'https://solscan.io', path:'/account/{a}' },
+  'bip122:000000000019d6689c085ae165831e93': { base:'https://mempool.space', path:'/address/{a}' },
+  'cosmos:cosmoshub-4': { base:'https://www.mintscan.io/cosmos', path:'/address/{a}' },
+  'tron:mainnet': { base:'https://tronscan.org/#', path:'/address/{a}' },
+  'ton:mainnet':  { base:'https://tonscan.org',   path:'/address/{a}' },
+  'fil:mainnet':  { base:'https://filfox.info/en',path:'/address/{a}' },
+  'sui:mainnet':  { base:'https://suiscan.xyz/mainnet', path:'/account/{a}' },
+  'xrpl:mainnet': { base:'https://livenet.xrpl.org', path:'/accounts/{a}' },
+};
+
+function buildExplorerUrl(chainId, addr) {
+  // Try server-provided networks first, then fallback map
+  const c = networks[chainId];
+  if (c) {
+    const pathTpl = c.explorerPath || '/address/{addr}';
+    return c.explorer + pathTpl.replace('{addr}', addr);
+  }
+  const e = EXPLORER_URLS[chainId];
+  return e ? e.base + e.path.replace('{a}', addr) : null;
+}
+
+function chainLabel(chainId) {
+  return networks[chainId]?.name || CHAIN_LABELS[chainId] || chainId.split(':')[0];
+}
+
+// ── Receive ───────────────────────────────────────────────────────────────────
+
+function populateReceiveChains() {} // no-op — chains now come from selected wallet
+
+function initReceivePage() {
+  const sel = document.getElementById('recv-wallet');
+  sel.innerHTML = '<option value="">— select wallet —</option>' +
+    wallets.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+  document.getElementById('recv-chain').innerHTML = '<option value="">— select wallet first —</option>';
+  document.getElementById('recv-content').style.display = 'none';
+}
+
+function onRecvWalletChange() {
+  const walletId = document.getElementById('recv-wallet').value;
+  const chainSel = document.getElementById('recv-chain');
+  document.getElementById('recv-content').style.display = 'none';
+  if (!walletId) { chainSel.innerHTML = '<option value="">— select wallet first —</option>'; return; }
+
+  const wallet = wallets.find(w => w.id === walletId);
+  if (!wallet) return;
+
+  chainSel.innerHTML = wallet.accounts.map(a =>
+    `<option value="${a.chainId}">${chainLabel(a.chainId)}</option>`
+  ).join('');
+  updateReceive();
+}
+
+function updateReceive() {
+  const walletId = document.getElementById('recv-wallet').value;
+  const chainId  = document.getElementById('recv-chain').value;
+  if (!walletId || !chainId) { document.getElementById('recv-content').style.display = 'none'; return; }
+
+  const wallet  = wallets.find(w => w.id === walletId);
+  if (!wallet) return;
+  const account = wallet.accounts.find(a => a.chainId === chainId);
+  if (!account) { toast('No account for this chain', 'err'); return; }
+
+  const addr = account.address;
+  document.getElementById('recv-addr').textContent = addr;
+  document.getElementById('recv-explorer').href = buildExplorerUrl(chainId, addr) || '#';
+
+  const qrEl = document.getElementById('qr-canvas');
+  qrEl.innerHTML = '';
+  new QRCode(qrEl, { text: addr, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+  document.getElementById('recv-content').style.display = 'block';
+}
+
+function copyAddr() { copy(document.getElementById('recv-addr').textContent, 'Address'); }
+
+// ── Send ──────────────────────────────────────────────────────────────────────
+
+const SENDABLE = {
+  'solana': {
+    label: 'SOL (Solana Devnet)',
+    chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    testnetChainId: 'solana:devnet',
+    endpoint: '/api/send/sol',
+    addrFormat: 'Base58 (32–44 chars, no 0x prefix)',
+    addrExample: 'e.g. JAHzn5JD4bTm...',
+    validateAddr: (a) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a),
+    addrErr: 'Solana addresses are base58 (32–44 characters, no 0x prefix). Your other wallets\' Solana addresses are shown in the chips below.',
+  },
+  'eth-sepolia': {
+    label: 'ETH (Sepolia testnet)',
+    chainId: 'eip155:1',
+    testnetChainId: 'eip155:11155111',
+    sendChainId: 'eip155:11155111',
+    endpoint: '/api/send/evm',
+    addrFormat: 'EVM hex address (0x + 40 hex chars)',
+    addrExample: 'e.g. 0xAb16...',
+    validateAddr: (a) => /^0x[0-9a-fA-F]{40}$/.test(a),
+    addrErr: 'EVM addresses start with 0x followed by 40 hex characters.',
+    testnetOnly: true,
+  },
+  'eth-mainnet': {
+    label: 'ETH (Ethereum mainnet)',
+    chainId: 'eip155:1',
+    sendChainId: 'eip155:1',
+    endpoint: '/api/send/evm',
+    addrFormat: 'EVM hex address (0x + 40 hex chars)',
+    addrExample: 'e.g. 0xAb16...',
+    validateAddr: (a) => /^0x[0-9a-fA-F]{40}$/.test(a),
+    addrErr: 'EVM addresses start with 0x followed by 40 hex characters.',
+    mainnetOnly: true,
+  },
+};
+
+let sendTxHash = '';
+
+function initSendPage() {
+  const fromSel = document.getElementById('send-from');
+  fromSel.innerHTML = '<option value="">— select wallet —</option>' +
+    wallets.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+  document.getElementById('send-result').style.display = 'none';
+  document.getElementById('send-balance-row').style.display = 'none';
+  document.getElementById('send-btn').disabled = true;
+  document.getElementById('send-status').textContent = '';
+  onSendWalletChange();
+}
+
+function onSendWalletChange() {
+  const walletId = document.getElementById('send-from').value;
+  const assetSel = document.getElementById('send-asset');
+  document.getElementById('send-balance-row').style.display = 'none';
+  document.getElementById('send-btn').disabled = true;
+
+  if (!walletId) { assetSel.innerHTML = '<option value="">— select wallet first —</option>'; return; }
+
+  const wallet = wallets.find(w => w.id === walletId);
+  if (!wallet) return;
+
+  // Build asset options from this wallet's accounts + sendable map, filtered by network mode
+  const opts = Object.entries(SENDABLE).filter(([, s]) => {
+    if (s.testnetOnly && !isTestnet) return false;
+    if (s.mainnetOnly && isTestnet) return false;
+    return wallet.accounts.some(a => a.chainId === s.chainId);
+  });
+  assetSel.innerHTML = '<option value="">— select asset —</option>' +
+    opts.map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('');
+
+  // Pre-fill "to wallet" chips with other wallets
+  populateSendToChips(walletId);
+}
+
+function populateSendToChips(fromId) {
+  const assetKey = document.getElementById('send-asset').value;
+  const chainId  = SENDABLE[assetKey]?.chainId;
+  const chips    = document.getElementById('send-to-wallet-chips');
+  const other    = wallets.filter(w => w.id !== fromId);
+  if (!other.length || !chainId) { chips.innerHTML = ''; return; }
+
+  chips.innerHTML = other.map(w => {
+    const acc = w.accounts.find(a => a.chainId === chainId);
+    if (!acc) return '';
+    return `<button class="btn btn-ghost btn-sm"
+      onclick="document.getElementById('send-to').value='${acc.address}';toast('${w.name} address pasted')"
+      style="font-size:11px">${w.name}</button>`;
+  }).join('');
+}
+
+function validateSendAddress() {
+  const assetKey = document.getElementById('send-asset').value;
+  const addr     = document.getElementById('send-to').value.trim();
+  const errEl    = document.getElementById('send-addr-err');
+  const btn      = document.getElementById('send-btn');
+  const s        = SENDABLE[assetKey];
+
+  errEl.style.display = 'none';
+  if (!addr || !s) return;
+
+  if (!s.validateAddr(addr)) {
+    errEl.textContent = s.addrErr;
+    errEl.style.display = 'block';
+    btn.disabled = true;
+  } else {
+    btn.disabled = false;
+  }
+}
+
+async function onSendAssetChange() {
+  const walletId = document.getElementById('send-from').value;
+  const assetKey = document.getElementById('send-asset').value;
+  const balRow   = document.getElementById('send-balance-row');
+  const balEl    = document.getElementById('send-available');
+  const btn      = document.getElementById('send-btn');
+  const s        = SENDABLE[assetKey];
+
+  // Show address format hint
+  const hintEl  = document.getElementById('send-addr-hint');
+  const fmtEl   = document.getElementById('send-addr-format');
+  const inputEl = document.getElementById('send-to');
+  if (s) {
+    hintEl.textContent = `⚠ ${s.addrFormat}`;
+    hintEl.style.display = 'block';
+    fmtEl.textContent = `— ${s.addrExample}`;
+    inputEl.placeholder = s.addrExample.replace('e.g. ', '');
+  } else {
+    hintEl.style.display = 'none';
+    fmtEl.textContent = '';
+    inputEl.placeholder = 'Recipient address';
+  }
+  document.getElementById('send-addr-err').style.display = 'none';
+
+  populateSendToChips(walletId);
+
+  if (!walletId || !assetKey) { balRow.style.display = 'none'; btn.disabled = true; return; }
+
+  const wallet = wallets.find(w => w.id === walletId);
+  const acc = wallet?.accounts.find(a => a.chainId === s.chainId);
+  if (!acc) return;
+
+  balEl.textContent = 'Fetching…';
+  balRow.style.display = 'block';
+
+  const chainIdParam = isTestnet && s.testnetChainId ? s.testnetChainId : (s.sendChainId || s.chainId);
+  const r = await api('GET', `/api/balance?chainId=${encodeURIComponent(chainIdParam)}&address=${encodeURIComponent(acc.address)}`);
+  if (r.ok && r.data && !r.data.error) {
+    balEl.textContent = `${r.data.formatted} ${r.data.symbol}`;
+    btn.disabled = false;
+  } else {
+    balEl.textContent = 'Could not fetch balance';
+  }
+}
+
+async function doSend() {
+  const fromWallet = document.getElementById('send-from').value;
+  const assetKey   = document.getElementById('send-asset').value;
+  const toAddress  = document.getElementById('send-to').value.trim();
+  const amount     = document.getElementById('send-amount').value.trim();
+  const statusEl   = document.getElementById('send-status');
+  const btn        = document.getElementById('send-btn');
+
+  if (!fromWallet || !assetKey || !toAddress || !amount) {
+    toast('Fill in all fields', 'err'); return;
+  }
+
+  const asset = SENDABLE[assetKey];
+  if (asset && !asset.validateAddr(toAddress)) {
+    toast(asset.addrErr, 'err');
+    document.getElementById('send-addr-err').textContent = asset.addrErr;
+    document.getElementById('send-addr-err').style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Sending…';
+  statusEl.textContent = 'Building & signing transaction…';
+  document.getElementById('send-result').style.display = 'none';
+
+  const s = SENDABLE[assetKey];
+  let endpoint, body;
+  if (assetKey === 'solana') {
+    endpoint = '/api/send/sol';
+    body = { fromWallet, toAddress, amount, testnet: isTestnet };
+  } else if (s?.endpoint === '/api/send/evm') {
+    endpoint = '/api/send/evm';
+    const chainId = isTestnet && s.testnetChainId ? s.testnetChainId : (s.sendChainId || s.chainId);
+    body = { fromWallet, toAddress, amount, chainId };
+  } else {
+    toast('Sending not supported for this asset yet', 'err');
+    btn.disabled = false;
+    btn.textContent = 'Send';
+    statusEl.textContent = '';
+    return;
+  }
+
+  const r = await api('POST', endpoint, body);
+
+  btn.disabled = false;
+  btn.textContent = 'Send';
+
+  if (r.ok) {
+    sendTxHash = r.data.txHash;
+    statusEl.textContent = '';
+    document.getElementById('send-txhash').textContent = r.data.txHash;
+    document.getElementById('send-explorer-link').href = r.data.explorerUrl;
+    document.getElementById('send-result').style.display = 'block';
+    document.getElementById('send-amount').value = '';
+    document.getElementById('send-to').value = '';
+    toast('Transaction sent!');
+    onSendAssetChange(); // refresh balance
+  } else {
+    statusEl.textContent = '';
+    toast(r.error, 'err');
+  }
+}
+
+function copySendTx() { copy(sendTxHash, 'Transaction hash'); }
+
+// ── Sign ──────────────────────────────────────────────────────────────────────
+
+async function signMsg() {
+  const wallet = document.getElementById('sm-wallet').value.trim();
+  const chain = document.getElementById('sm-chain').value;
+  const message = document.getElementById('sm-message').value;
+  const apiKey = document.getElementById('sm-apikey').value.trim();
+  const el = document.getElementById('sm-result');
+  const r = await api('POST', '/api/sign/message', { wallet, chain, message, apiKey: apiKey || null });
+  showSig(el, r);
+}
+
+async function signTx() {
+  const wallet = document.getElementById('st-wallet').value.trim();
+  const chain = document.getElementById('st-chain').value;
+  const txHex = document.getElementById('st-txhex').value.trim();
+  const apiKey = document.getElementById('st-apikey').value.trim();
+  const el = document.getElementById('st-result');
+  const r = await api('POST', '/api/sign/transaction', { wallet, chain, txHex, apiKey: apiKey || null });
+  showSig(el, r);
+}
+
+async function signTyped() {
+  const wallet = document.getElementById('td-wallet').value.trim();
+  const chain = document.getElementById('td-chain').value;
+  const raw = document.getElementById('td-data').value.trim();
+  const el = document.getElementById('td-result');
+  let typedData;
+  try { typedData = JSON.parse(raw); } catch { toast('Invalid JSON', 'err'); return; }
+  const r = await api('POST', '/api/sign/typed-data', { wallet, chain, typedData });
+  showSig(el, r);
+}
+
+function showSig(el, r) {
+  el.style.display = 'block';
+  if (r.ok) {
+    lastSignResult = r.data;
+    el.style.borderLeftColor = 'var(--green)';
+    el.innerHTML = `
+      <div class="sig-label">Signature</div>
+      <div style="word-break:break-all;color:#a5f3fc">${r.data.signature}</div>
+      ${r.data.recoveryId != null ? `<div class="sig-label" style="margin-top:8px">Recovery ID: ${r.data.recoveryId}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="copy('${r.data.signature}','Signature')">Copy</button>
+        <button class="btn btn-ghost btn-sm" onclick="nav('sign',document.querySelector('.nav-item[onclick*=sign]'));switchTab('sign','verify',document.querySelector('[onclick*=verify]'));pasteLastSig()">Verify ↗</button>
+      </div>
+    `;
+    toast('Signed successfully');
+  } else {
+    el.style.borderLeftColor = 'var(--red)';
+    el.innerHTML = `<div style="color:var(--red)">${r.error}</div>`;
+    toast(r.error, 'err');
+  }
+}
+
+async function verifySig() {
+  const chain   = document.getElementById('vfy-chain').value;
+  const address = document.getElementById('vfy-address').value.trim();
+  const message = document.getElementById('vfy-message').value;
+  const sig     = document.getElementById('vfy-sig').value.trim().replace(/^0x/, '');
+  const el      = document.getElementById('vfy-result');
+
+  if (!address || !message || !sig) { toast('Fill in all verify fields', 'err'); return; }
+
+  el.style.display = 'block';
+  el.style.background = 'var(--surface2)';
+  el.innerHTML = '<span class="spin"></span> Verifying…';
+
+  const r = await api('POST', '/api/verify', { chain, address, message, signature: sig });
+
+  if (!r.ok) {
+    el.style.background = 'rgba(239,68,68,.08)';
+    el.style.border = '1px solid rgba(239,68,68,.3)';
+    el.innerHTML = `<span style="color:var(--red)">❌ Error: ${r.error}</span>`;
+    return;
+  }
+
+  if (r.data.valid === null) {
+    el.style.background = 'rgba(245,158,11,.08)';
+    el.style.border = '1px solid rgba(245,158,11,.3)';
+    el.innerHTML = `<span style="color:var(--yellow)">ℹ️ ${r.data.message}</span><br><span style="font-size:11px;color:var(--muted)">${r.data.tip||''}</span>`;
+    return;
+  }
+
+  if (r.data.valid) {
+    el.style.background = 'rgba(34,197,94,.07)';
+    el.style.border = '1px solid var(--green)';
+    el.innerHTML = `
+      <div style="color:var(--green);font-weight:700;font-size:15px;margin-bottom:8px">✅ Valid signature</div>
+      <div style="font-size:11px;color:var(--muted)">Chain</div>
+      <div style="margin-bottom:6px">${chain}</div>
+      <div style="font-size:11px;color:var(--muted)">Signer address</div>
+      <div class="mono" style="margin-bottom:6px;font-size:12px;word-break:break-all">${address}</div>
+      <div style="font-size:11px;color:var(--muted)">Message</div>
+      <div style="margin-bottom:6px">${JSON.stringify(message)}</div>
+      ${r.data.recovered ? `<div style="font-size:11px;color:var(--muted)">Recovered address</div><div class="mono" style="font-size:12px">${r.data.recovered}</div>` : ''}
+    `;
+  } else {
+    el.style.background = 'rgba(239,68,68,.08)';
+    el.style.border = '1px solid rgba(239,68,68,.3)';
+    el.innerHTML = `
+      <div style="color:var(--red);font-weight:700;font-size:15px;margin-bottom:8px">❌ Invalid signature</div>
+      <div style="font-size:12px;color:var(--muted)">The signature does not match the provided address and message.</div>
+      ${r.data.recovered ? `<div style="margin-top:8px;font-size:11px;color:var(--muted)">Recovered address: <span class="mono">${r.data.recovered}</span></div>` : ''}
+    `;
+  }
+}
+
+let lastSignResult = null;
+
+function pasteLastSig() {
+  if (!lastSignResult) { toast('No signature yet — sign something first', 'err'); return; }
+  document.getElementById('vfy-sig').value = lastSignResult.signature;
+  toast('Signature pasted');
+}
+
+function loadTypedExample() {
+  document.getElementById('td-data').value = JSON.stringify({
+    domain: { name: "OWSDemo", version: "1", chainId: 1 },
+    types: {
+      Mail: [
+        { name: "from", type: "string" },
+        { name: "to", type: "string" },
+        { name: "contents", type: "string" }
+      ]
+    },
+    primaryType: "Mail",
+    message: { from: "alice@ows.sh", to: "bob@ows.sh", contents: "Hello!" }
+  }, null, 2);
+}
+
+// ── Mnemonic ──────────────────────────────────────────────────────────────────
+
+async function generateMnemonic() {
+  const words = +document.getElementById('mn-words').value;
+  const r = await api('POST', '/api/mnemonic/generate', { words });
+  if (r.ok) {
+    lastMnemonic = r.data;
+    document.getElementById('mn-result').textContent = r.data;
+    document.getElementById('mn-output').style.display = 'block';
+    toast('Mnemonic generated');
+  } else {
+    toast(r.error, 'err');
+  }
+}
+
+function copyMn() { copy(lastMnemonic, 'Mnemonic'); }
+function pasteToDerive() { document.getElementById('derive-mn').value = lastMnemonic; toast('Pasted into Derive field'); }
+
+async function deriveAll() {
+  const mnemonic = document.getElementById('derive-mn').value.trim();
+  if (!mnemonic) { toast('Enter a mnemonic', 'err'); return; }
+  const grid = document.getElementById('derive-grid');
+  grid.style.display = 'grid';
+  grid.innerHTML = Object.keys(networks).map(chainId => {
+    const c = networks[chainId];
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <div class="chain-dot" style="background:${c.color||'#888'}"></div>
+        <span style="font-size:11px;font-weight:700;color:var(--muted)">${c.name}</span>
+      </div>
+      <div class="mono" style="font-size:11px;word-break:break-all;color:var(--muted)" id="da-${safeId(chainId)}">…</div>
+    </div>`;
+  }).join('');
+
+  const chainMap = {
+    'eip155:1':'evm','eip155:8453':'base','eip155:137':'polygon',
+    'eip155:42161':'arbitrum','eip155:10':'optimism','eip155:56':'bsc',
+    'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp':'solana',
+    'bip122:000000000019d6689c085ae165831e93':'bitcoin',
+    'cosmos:cosmoshub-4':'cosmos','tron:mainnet':'tron','ton:mainnet':'ton',
+    'fil:mainnet':'filecoin','sui:mainnet':'sui','xrpl:mainnet':'xrpl',
+  };
+
+  await Promise.all(Object.keys(networks).map(async chainId => {
+    const chain = chainMap[chainId];
+    if (!chain) return;
+    const el = document.getElementById('da-' + safeId(chainId));
+    if (!el) return;
+    const r = await api('POST', '/api/mnemonic/derive', { mnemonic, chain });
+    if (el) el.textContent = r.ok ? r.data : r.error;
+  }));
+}
+
+// ── Policies ──────────────────────────────────────────────────────────────────
+
+async function createPolicy() {
+  const id = document.getElementById('pol-id').value.trim();
+  const name = document.getElementById('pol-name').value.trim();
+  const chains = document.getElementById('pol-chains').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!id || !name) { toast('ID and name required', 'err'); return; }
+  const policy = { id, name, version: 1, created_at: new Date().toISOString(), rules: [{ type: 'allowed_chains', chain_ids: chains }], action: 'deny' };
+  const r = await api('POST', '/api/policies', policy);
+  if (r.ok) { toast(`Policy "${name}" created`); loadPolicies(); ['pol-id','pol-name','pol-chains'].forEach(f => document.getElementById(f).value = ''); }
+  else toast(r.error, 'err');
+}
+
+async function loadPolicies() {
+  const r = await api('GET', '/api/policies');
+  const el = document.getElementById('policy-list');
+  if (!r.ok || !r.data.length) { el.innerHTML = '<div class="empty">No policies.</div>'; return; }
+  el.innerHTML = r.data.map(p => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600">${p.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${p.id} · chains: ${p.rules?.[0]?.chain_ids?.join(', ') || 'any'}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deletePolicy('${p.id}','${p.name}')">Delete</button>
+    </div>
+  `).join('');
+}
+
+async function deletePolicy(id, name) {
+  if (!confirm(`Delete policy "${name}"?`)) return;
+  const r = await api('DELETE', `/api/policies/${id}`);
+  if (r.ok) { toast('Policy deleted'); loadPolicies(); } else toast(r.error, 'err');
+}
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+
+async function createApiKey() {
+  const name = document.getElementById('k-name').value.trim();
+  const walletIds = document.getElementById('k-wallets').value.split(',').map(s => s.trim()).filter(Boolean);
+  const policyIds = document.getElementById('k-policies').value.split(',').map(s => s.trim()).filter(Boolean);
+  const expiresAt = document.getElementById('k-expires').value.trim() || null;
+  if (!name || !walletIds.length) { toast('Name and wallet IDs required', 'err'); return; }
+  const r = await api('POST', '/api/keys', { name, walletIds, policyIds, expiresAt });
+  if (r.ok) {
+    lastToken = r.data.token;
+    document.getElementById('key-token').textContent = r.data.token;
+    document.getElementById('key-created').style.display = 'block';
+    toast(`Key "${name}" created`);
+    loadApiKeys();
+  } else toast(r.error, 'err');
+}
+
+function copyToken() { copy(lastToken, 'Token'); }
+
+async function loadApiKeys() {
+  const r = await api('GET', '/api/keys');
+  const el = document.getElementById('key-list');
+  if (!r.ok || !r.data.length) { el.innerHTML = '<div class="empty">No API keys.</div>'; return; }
+  el.innerHTML = r.data.map(k => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600">${k.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${k.id}${k.expires_at ? ' · expires ' + k.expires_at : ''}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}','${k.name}')">Revoke</button>
+    </div>
+  `).join('');
+}
+
+async function revokeKey(id, name) {
+  if (!confirm(`Revoke key "${name}"?`)) return;
+  const r = await api('DELETE', `/api/keys/${id}`);
+  if (r.ok) { toast('Key revoked'); loadApiKeys(); } else toast(r.error, 'err');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// ── Testnet ───────────────────────────────────────────────────────────────────
+
+let tnPollTimer = null;
+
+function populateTestnetWallets() {
+  const sel = document.getElementById('tn-wallet-sel');
+  sel.innerHTML = '<option value="">— select wallet —</option>' +
+    wallets.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+}
+
+function stopTestnetPoll() {
+  if (tnPollTimer) { clearInterval(tnPollTimer); tnPollTimer = null; }
+}
+
+async function loadTestnetAccounts() {
+  const walletId = document.getElementById('tn-wallet-sel').value;
+  const el = document.getElementById('tn-content');
+  const refreshBtn = document.getElementById('tn-refresh-btn');
+  const lastUpdated = document.getElementById('tn-last-updated');
+
+  stopTestnetPoll();
+
+  if (!walletId) {
+    el.innerHTML = '<div class="empty">Select a wallet above.</div>';
+    refreshBtn.style.display = 'none';
+    lastUpdated.textContent = '';
+    return;
+  }
+
+  refreshBtn.style.display = '';
+
+  // Show spinner inline without clearing existing content (so balances don't flicker on refresh)
+  const isFirstLoad = el.innerHTML.includes('Select a wallet') || el.innerHTML.includes('Loading testnet');
+  if (isFirstLoad) el.innerHTML = '<div class="empty"><span class="spin"></span>Fetching live balances from testnet RPCs…</div>';
+
+  refreshBtn.disabled = true;
+  refreshBtn.innerHTML = '<span class="spin"></span>Refreshing';
+
+  const r = await api('GET', `/api/wallets/${walletId}/testnet-accounts`);
+
+  refreshBtn.disabled = false;
+  refreshBtn.textContent = '↻ Refresh';
+
+  if (!r.ok) { el.innerHTML = `<div class="empty" style="color:var(--red)">${r.error}</div>`; return; }
+
+  const accounts = r.data;
+  if (!accounts.length) { el.innerHTML = '<div class="empty">No testnet accounts found.</div>'; return; }
+
+  const now = new Date();
+  lastUpdated.textContent = `Updated ${now.toLocaleTimeString()}`;
+
+  // Auto-refresh every 20 seconds
+  tnPollTimer = setInterval(() => loadTestnetAccounts(), 20000);
+
+  el.innerHTML = accounts.map(acc => {
+    const bal = acc.balance;
+    const funded = bal && !bal.error && parseFloat(bal.formatted) > 0;
+    const balDisplay = bal?.error
+      ? `<span style="color:var(--muted);font-size:12px">unavailable</span>`
+      : bal
+        ? `<span style="font-size:20px;font-weight:700;font-family:monospace;color:${funded ? 'var(--green)' : 'var(--text)'}">${bal.formatted}</span>
+           <span style="font-size:12px;color:var(--muted);margin-left:4px">${bal.symbol}</span>`
+        : '';
+
+    const faucetHtml = acc.faucets.length
+      ? `<div class="faucet-card">
+          <div class="faucet-title">🚰 ${funded ? 'Need more test tokens?' : 'Get test tokens — paste your address into a faucet'}</div>
+          ${acc.faucets.map(f => `
+            <div class="faucet-row">
+              <span style="font-size:12px">${f.name}</span>
+              <a href="${f.url}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px">Open Faucet ↗</a>
+            </div>`).join('')}
+         </div>`
+      : '';
+
+    return `<div class="testnet-chain" style="${funded ? 'border-color:rgba(34,197,94,.35)' : ''}">
+      <div class="testnet-chain-header">
+        <div class="chain-dot" style="background:${acc.color}"></div>
+        <div style="font-weight:600;font-size:14px">${acc.chainName}</div>
+        ${funded
+          ? `<span style="font-size:11px;color:var(--green);background:rgba(34,197,94,.1);padding:2px 8px;border-radius:999px;margin-left:8px">● funded</span>`
+          : `<span style="font-size:11px;color:var(--yellow);background:rgba(245,158,11,.1);padding:2px 8px;border-radius:999px;margin-left:8px">empty</span>`
+        }
+        <div style="margin-left:auto">${balDisplay}</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Address</div>
+      <div class="testnet-addr-box">${acc.address}</div>
+      <div style="display:flex;gap:8px;margin-bottom:${acc.faucets.length ? '12px' : '0'}">
+        <button class="btn btn-ghost btn-sm" onclick="copy('${acc.address}','Address')">Copy</button>
+        <a href="${acc.explorerUrl}" target="_blank" class="btn btn-ghost btn-sm">View on Explorer ↗</a>
+      </div>
+
+      ${faucetHtml}
+    </div>`;
+  }).join('');
+}
+
+function safeId(str) { return str.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+function hashColor(str) {
+  let h = 0;
+  for (const c of str) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return '#' + ((h >>> 0) % 0xffffff).toString(16).padStart(6, '0');
+}
+
+function timeAgo(iso) {
+  const diff = (Date.now() - new Date(iso)) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+</script>
+</body>
+</html>

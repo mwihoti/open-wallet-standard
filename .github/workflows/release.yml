@@ -1,0 +1,361 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset: ows-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset: ows-linux-aarch64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset: ows-darwin-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset: ows-darwin-aarch64
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        working-directory: ows
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable
+          rustup target add ${{ matrix.target }}
+
+      - name: Install zig
+        if: contains(matrix.target, 'linux')
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        if: contains(matrix.target, 'linux')
+        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d # v2.68.35
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build (Linux - glibc 2.17+)
+        if: contains(matrix.target, 'linux')
+        run: cargo zigbuild --release --target ${{ matrix.target }}.2.17
+
+      - name: Build (macOS)
+        if: "!contains(matrix.target, 'linux')"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/ows ${{ matrix.asset }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ${{ matrix.asset }}
+          path: ows/${{ matrix.asset }}
+
+  python-wheels:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: |
+            3.9
+            3.10
+            3.11
+            3.12
+            3.13
+
+      - name: Set version from tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          "$GITHUB_WORKSPACE/scripts/set-version.sh" "$V" --python
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist -i python3.9 python3.10 python3.11 python3.12 python3.13
+          sccache: "true"
+          manylinux: auto
+          working-directory: bindings/python
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: python-wheel-${{ matrix.target }}
+          path: bindings/python/dist/*.whl
+
+  publish-pypi:
+    needs: python-wheels
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: python-wheel-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+
+  node-addons:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        working-directory: bindings/node
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable
+          rustup target add ${{ matrix.target }}
+
+      - name: Install zig
+        if: contains(matrix.target, 'linux')
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.13.0
+
+      - name: Install cargo-zigbuild
+        if: contains(matrix.target, 'linux')
+        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d # v2.68.35
+        with:
+          tool: cargo-zigbuild
+
+      - name: Set version from tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          "$GITHUB_WORKSPACE/scripts/set-version.sh" "$V" --node
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Build native addon (Linux - glibc 2.17+)
+        if: contains(matrix.target, 'linux')
+        run: npx napi build --platform --release --target ${{ matrix.target }} --zig --zig-abi-suffix 2.17
+
+      - name: Build native addon (macOS)
+        if: "!contains(matrix.target, 'linux')"
+        run: npx napi build --platform --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: node-addon-${{ matrix.target }}
+          path: |
+            bindings/node/*.node
+            bindings/node/index.js
+            bindings/node/index.d.ts
+
+  publish-npm:
+    needs: [node-addons, build]
+    runs-on: ubuntu-latest
+    environment: release
+
+    defaults:
+      run:
+        working-directory: bindings/node
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Set version from tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          "$GITHUB_WORKSPACE/scripts/set-version.sh" "$V" --node
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: node-addon-*
+          merge-multiple: true
+          path: bindings/node/artifacts
+
+      - name: Move artifacts to platform packages
+        run: |
+          npx napi artifacts --dir artifacts
+          cp artifacts/index.js . 2>/dev/null || true
+          cp artifacts/index.d.ts . 2>/dev/null || true
+
+      - name: Verify index.js exists
+        run: |
+          if [ ! -f index.js ] || [ ! -f index.d.ts ]; then
+            echo "ERROR: index.js or index.d.ts missing — npm package would be broken"
+            exit 1
+          fi
+
+      - name: Download CLI binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ows-*
+          merge-multiple: true
+          path: bindings/node/cli-binaries
+
+      - name: Copy CLI binaries into platform packages
+        run: |
+          cp cli-binaries/ows-darwin-aarch64 npm/darwin-arm64/ows   && chmod +x npm/darwin-arm64/ows
+          cp cli-binaries/ows-darwin-x86_64  npm/darwin-x64/ows     && chmod +x npm/darwin-x64/ows
+          cp cli-binaries/ows-linux-x86_64   npm/linux-x64-gnu/ows  && chmod +x npm/linux-x64-gnu/ows
+          cp cli-binaries/ows-linux-aarch64  npm/linux-arm64-gnu/ows && chmod +x npm/linux-arm64-gnu/ows
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in npm/*/; do
+            output=$(npm publish "$dir" --access public 2>&1) || {
+              if echo "$output" | grep -qi "cannot publish over\|previously published"; then
+                echo "Already published: $dir — skipping"
+              else
+                echo "Failed to publish $dir"
+                echo "$output"
+                exit 1
+              fi
+            }
+          done
+
+      - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --ignore-scripts
+
+  publish-crates:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+
+    defaults:
+      run:
+        working-directory: ows
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        run: rustup update stable
+
+      - name: Set version from tag
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          "$GITHUB_WORKSPACE/scripts/set-version.sh" "$V" --rust
+
+      - name: Publish ows-core
+        run: cargo publish -p ows-core --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_REGISTRY_TOKEN }}
+
+      - name: Publish ows-signer
+        run: cargo publish -p ows-signer --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_REGISTRY_TOKEN }}
+
+      - name: Publish ows-lib
+        run: cargo publish -p ows-lib --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_REGISTRY_TOKEN }}
+
+      - name: Publish ows-pay
+        run: cargo publish -p ows-pay --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_REGISTRY_TOKEN }}
+
+      - name: Publish ows-cli
+        run: cargo publish -p ows-cli --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_REGISTRY_TOKEN }}
+
+  sbom:
+    uses: ./.github/workflows/sbom.yml
+
+  release:
+    needs: [build, sbom]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ows-*
+          merge-multiple: true
+
+      - name: Download SBOMs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: sbom
+
+      - name: Package SBOMs
+        run: tar czf sbom.tar.gz -C sbom .
+
+      - name: Create release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          generate_release_notes: true
+          files: |
+            ows-*
+            sbom.tar.gz
