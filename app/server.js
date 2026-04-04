@@ -885,10 +885,13 @@ app.post('/api/wallets/import/privatekey', wrap((req) => {
   return ows.importWalletPrivateKey(name, privateKey, null, VAULT, curve ?? 'evm');
 }));
 
+// ── Health check (for Render / load balancers) ────────────────────────────────
+app.get('/healthz', (req, res) => res.json({ ok: true }));
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`\n  OWS Wallet running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n  OWS Wallet running at http://0.0.0.0:${PORT}`);
   console.log(`  Vault: ${VAULT}\n`);
 });
