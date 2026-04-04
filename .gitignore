@@ -40,3 +40,4 @@ website-docs/install.sh
 bugs/
 
 docs/policy-engine-implementation.md
+app/node_modules/
