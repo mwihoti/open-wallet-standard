@@ -651,13 +651,70 @@ let currentWallet = null;
 let lastMnemonic = '';
 let lastToken = '';
 
+// ── Local storage persistence ─────────────────────────────────────────────────
+
+const LS_KEY = 'ows_ui_state';
+
+function saveState() {
+  try {
+    const activePage = document.querySelector('.page.active')?.id?.replace('page-', '') || 'portfolio';
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      isTestnet,
+      activePage,
+      savedAt: Date.now(),
+    }));
+  } catch {}
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const state = JSON.parse(raw);
+    // Discard state older than 24 hours
+    if (Date.now() - state.savedAt > 86400000) { localStorage.removeItem(LS_KEY); return null; }
+    return state;
+  } catch { return null; }
+}
+
+// Save state whenever user navigates or changes network
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveState();
+});
+window.addEventListener('beforeunload', saveState);
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 (async () => {
   try {
-    networks = await api('GET', '/api/networks?testnet=false').then(r => r.ok ? r.data : {});
+    const saved = loadState();
+
+    // Restore network mode
+    if (saved?.isTestnet) {
+      isTestnet = true;
+      document.getElementById('btn-mainnet').classList.remove('active');
+      document.getElementById('btn-testnet').classList.add('active');
+      document.getElementById('testnet-banner').classList.add('show');
+      document.getElementById('nav-testnet').style.display = '';
+    }
+
+    networks = await api('GET', `/api/networks?testnet=${isTestnet}`).then(r => r.ok ? r.data : {});
     await loadWallets();
-    await renderPortfolio();
+
+    // Restore last active page
+    if (saved?.activePage && saved.activePage !== 'portfolio') {
+      const btn = document.querySelector(`.nav-item[onclick*="'${saved.activePage}'"]`);
+      if (btn) {
+        nav(saved.activePage, btn);
+      } else {
+        await renderPortfolio();
+      }
+    } else {
+      await renderPortfolio();
+    }
+
+    if (isTestnet) populateTestnetWallets();
+
   } catch (e) {
     console.error('Bootstrap error:', e);
     const el = document.getElementById('portfolio-content');
@@ -676,6 +733,7 @@ async function setNetwork(mode) {
   document.getElementById('btn-testnet').classList.toggle('active', isTestnet);
   document.getElementById('testnet-banner').classList.toggle('show', isTestnet);
   document.getElementById('nav-testnet').style.display = isTestnet ? '' : 'none';
+  saveState();
 
   networks = await api('GET', `/api/networks?testnet=${isTestnet}`).then(r => r.ok ? r.data : {});
   populateReceiveChains();
@@ -698,6 +756,7 @@ function nav(page, btn) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
   btn.classList.add('active');
+  saveState();
   if (page === 'portfolio') renderPortfolio();
   if (page === 'wallets') renderWalletList();
   if (page === 'receive') populateReceiveWallets();
