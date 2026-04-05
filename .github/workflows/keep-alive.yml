@@ -13,11 +13,13 @@ jobs:
       - name: Ping Render app
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 30 \
-            https://open-wallet-standard.onrender.com/healthz)
+            --max-time 60 \
+            https://open-wallet-standard.onrender.com/healthz) || STATUS="timeout"
           echo "Health check status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Warning: app returned $STATUS — may still be waking up"
-          else
+          if [ "$STATUS" = "200" ]; then
             echo "App is alive"
+          elif [ "$STATUS" = "timeout" ]; then
+            echo "Request timed out — Render may still be waking up (this is normal)"
+          else
+            echo "Warning: app returned $STATUS"
           fi
